@@ -1,172 +1,174 @@
-use std::ptr::null_mut;
-use winapi::shared::{
-    minwindef::{HIWORD, LOWORD, LPARAM, LRESULT, UINT, WPARAM},
-    windef::{HWND, POINT, RECT},
-};
+use windows::{Win32::{
+    Foundation::*,
+    UI::{WindowsAndMessaging::*,Controls::RichEdit::*},
+	Graphics::Gdi::*,
+	System::LibraryLoader::*,
+},core::*,w};
 
-use std::ffi::CString;
-use winapi::shared::basetsd::LONG_PTR;
-use winapi::um::wingdi::GetStockObject;
-use winapi::um::wingdi::SYSTEM_FONT;
-use winapi::um::winuser::GetSysColor;
-use winapi::um::winuser::COLOR_WINDOWTEXT;
-use winapi::um::winuser::GetDlgItem;
-use winapi::um::winuser::GetSysColorBrush;
-use winapi::um::winuser::SendMessageA;
-use winapi::um::winuser::SetClassLongPtrA;
-use winapi::um::winuser::COLOR_WINDOW;
-use winapi::um::winuser::GCLP_HBRBACKGROUND;
-use winapi::um::winuser::WM_SETFONT;
 
-use winapi::um::winuser::{
-    CreateWindowExA, DefWindowProcA, DispatchMessageA, GetMessageA, PostQuitMessage,
-    RegisterClassA, ShowWindow, TranslateMessage, BS_DEFPUSHBUTTON, BS_PUSHBUTTON, CW_USEDEFAULT,
-    ES_AUTOHSCROLL, IDCANCEL, IDOK, MSG, SW_SHOW, WM_COMMAND, WM_DESTROY, WNDCLASSA, WS_CHILD,
-    WS_OVERLAPPEDWINDOW, WS_SYSMENU, WS_VISIBLE,
-};
-extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    match msg {
-        WM_COMMAND => {
-            let id = LOWORD(wparam as u32) as usize;
-            let code = HIWORD(wparam as u32);
-            let control_hwnd = lparam as HWND;
-            if code == 0 && id == IDOK as usize && control_hwnd == unsafe { GetDlgItem(hwnd, IDOK) }
-            {
-                println!("Ok clicked!");
-            } else if code == 0
-                && id == IDCANCEL as usize
-                && control_hwnd == unsafe { GetDlgItem(hwnd, IDCANCEL) }
-            {
-                println!("Cancel Clicked");
-            }
-            0
-        }
-        WM_DESTROY => {
-            unsafe { PostQuitMessage(0) };
-            0
-        }
-        _ => unsafe { DefWindowProcA(hwnd, msg, wparam, lparam) },
-    }
-}
+/*
+Foundation::{LPARAM, LRESULT, POINT, RECT, WPARAM,HWND},
+UI::WindowsAndMessaging::{
+        BS_DEFPUSHBUTTON, BS_PUSHBUTTON, CreateWindowExW, CW_USEDEFAULT,
+        DefWindowProcW, DispatchMessageW, ES_AUTOHSCROLL, ES_LEFT, GCLP_HBRBACKGROUND, GetClientRect,
+        */
+use windows::Win32::UI::WindowsAndMessaging::WNDCLASSW;
+use std::mem::{size_of, zeroed};
+
 fn main() {
+	
+	// Get the HINSTANCE for the current process
+let h_instance = unsafe { GetModuleHandleW(None).unwrap() };
+
+// Load the default application icon
+let h_icon = unsafe { LoadIconW(None, IDI_APPLICATION).unwrap() };
+
+// Load the default arrow cursor
+let h_cursor = unsafe { LoadCursorW(None, IDC_ARROW).unwrap() };
+
+// Register a window class
+//let class_name = "MyWindowClass\0".encode_utf16().collect::<Vec<u16>>();
+let class_name = w!("MyWindowClass");
+let wnd_class = WNDCLASSW {
+    style: WNDCLASS_STYLES(0),
+    lpfnWndProc: Some(window_proc),
+    hInstance: h_instance,
+    lpszClassName: windows::core::PCWSTR(class_name.as_ptr()),
+    cbClsExtra: 0,
+    cbWndExtra: 0,
+    hIcon: h_icon,
+    hCursor: h_cursor,
+    hbrBackground: unsafe { GetSysColorBrush(COLOR_WINDOW) },
+    lpszMenuName: PCWSTR::null(),
+};
     unsafe {
-        let class_name = "MyWindowClass\0".as_ptr() as *const i8;
-        //let class_name = CString::new("MyWindowClass").unwrap();
-        // Register a window class
-        let wnd_class = WNDCLASSA {
-            style: 0,
-            lpfnWndProc: Some(window_proc), //Some(DefWindowProcA),
-            hInstance: null_mut(),
-            lpszClassName: class_name,
-            cbClsExtra: 0,
-            cbWndExtra: 0,
-            hIcon: null_mut(),
-            hCursor: null_mut(),
-            hbrBackground: null_mut(),
-            lpszMenuName: null_mut(),
-        };
-        RegisterClassA(&wnd_class);
+       
+        RegisterClassW(&wnd_class);
 
         // Create the main window
-        let hwnd_main = CreateWindowExA(
-            0,
+        let hwnd_main = CreateWindowExW(
+            WINDOW_EX_STYLE(0),
             class_name,
-            "Hello World\0".as_ptr() as *const i8,
+            w!("Hello World")
             WS_OVERLAPPEDWINDOW | WS_SYSMENU,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
             640,
             480,
-            null_mut(),
-            null_mut(),
-            null_mut(),
-            null_mut(),
+            HWND(0),
+            HMENU(0),
+            h_instance,
+            None,
         );
 
         // Create the text box
-        let hwnd_text = CreateWindowExA(
-            0,
-            "EDIT\0".as_ptr() as *const i8,
-            null_mut(),
-            WS_VISIBLE | WS_CHILD | ES_AUTOHSCROLL,
+        let hwnd_text = CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            w!("Edit"),
+            w!(""),
+            WS_CHILD | WS_VISIBLE | ES_LEFT | ES_AUTOHSCROLL,
             10,
             10,
             300,
             20,
-            hwnd_main,
-            null_mut(),
-            null_mut(),
-            null_mut(),
+            HWND(0),
+            HMENU(0),
+            h_instance,
+            None,
         );
 
         // Create the OK button
-        let hwnd_ok = CreateWindowExA(
-            0,
-            "BUTTON\0".as_ptr() as *const i8,
-            "OK\0".as_ptr() as *const i8,
+        let hwnd_ok = CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            w!("Button"),
+            w!("Ok"),
             WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
             320,
             10,
             80,
             20,
-            hwnd_main,
-            IDOK as isize as *mut _,
-            null_mut(),
-            null_mut(),
+            HWND(0),
+            HMENU(IDOK),
+            h_instance,
+            None,
         );
 
         // Create the Cancel button
-        let hwnd_cancel = CreateWindowExA(
+        let hwnd_cancel = CreateWindowExW(
             0,
-            "BUTTON\0".as_ptr() as *const i8,
-            "Cancel\0".as_ptr() as *const i8,
+            Button::get_window_class_name().as_ptr(),
+            "Cancel\0".encode_utf16().as_ptr(),
             WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
             410,
             10,
             80,
             20,
             hwnd_main,
-            IDCANCEL as isize as *mut _,
-            null_mut(),
-            null_mut(),
+            IDCANCEL as isize as HMENU,
+            h_instance,
+            std::ptr::null_mut(),
         );
-       /* let hfont = GetStockObject(SYSTEM_FONT);
-        SendMessageA(hwnd_text, WM_SETFONT, hfont as WPARAM, 0);
-        let hbr = GetSysColorBrush(COLOR_WINDOW);
-        SetClassLongPtrA(hwnd_main, GCLP_HBRBACKGROUND, hbr as LONG_PTR);
-        SendMessageA(hwnd_text, EM_SETBKGNDCOLOR, 0, COLOR_WINDOW as LPARAM);
 
-        let hfont = GetStockObject(SYSTEM_FONT);
-        SendMessageA(hwnd_text, WM_SETFONT, hfont as WPARAM, 0);
-
-        let hcolor = GetSysColor(COLOR_WINDOWTEXT);
-        SendMessageA(hwnd_text, EM_SETTEXTCOLOR, hcolor as WPARAM, 0);
-*/
         // Show the main window
         ShowWindow(hwnd_main, SW_SHOW);
 
         // Run the message loop
-        let mut msg = MSG {
-            hwnd: null_mut(),
-            message: 0,
-            wParam: 0,
-            lParam: 0,
-            time: 0,
-            pt: POINT { x: 0, y: 0 },
-        };
+        let mut msg = MSG::default();
         loop {
-            let result = GetMessageA(&mut msg, null_mut(), 0, 0);
+            let result = GetMessageW(&mut msg, HWND::NULL, 0, 0);
             if result == 0 {
                 break;
             } else if result == -1 {
                 //handle error
             } else {
                 TranslateMessage(&msg);
-                DispatchMessageA(&msg);
+                DispatchMessageW(&msg);
             }
         }
 
         // Clean up
         PostQuitMessage(0);
     }
+}
+
+unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
+    match msg {
+        WM_CREATE => {
+            let h_instance = GetModuleHandleW(None);
+            let h_brush = CreateSolidBrush(COLOR_WINDOW);
+            SetClassLongPtrW(hwnd, GCLP_HBRBACKGROUND, h_brush.0 as isize);
+            let hwnd_text = CreateWindowExW(
+                0,
+                Edit::get_window_class_name().as_ptr(),
+                "".encode_utf16().as_ptr(),
+                WS_CHILD | WS_VISIBLE | ES_LEFT | ES_AUTOHSCROLL,
+                10,
+                10,
+                300,
+                20,
+                hwnd,
+                HMENU::NULL,
+                h_instance,
+                std::ptr::null_mut(),
+            );
+            SendMessageW(hwnd_text, EM_SETBKGNDCOLOR, 0, COLOR_WINDOW as isize);
+        }
+        WM_PAINT => {
+            let mut ps: PAINTSTRUCT = zeroed();
+            let hdc = BeginPaint(hwnd, &mut ps);
+            let rect = RECT {
+                left: ps.rcPaint.left,
+                top: ps.rcPaint.top,
+                right: ps.rcPaint.right,
+                bottom: ps.rcPaint.bottom,
+            };
+            FillRect(hdc, &rect, GetSysColorBrush(COLOR_WINDOW));
+            EndPaint(hwnd, &ps);
+        }
+        WM_DESTROY => {
+            PostQuitMessage(0);
+        }
+        _ => return DefWindowProcW(hwnd, msg, w_param, l_param),
+    }
+    0
 }
