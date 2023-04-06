@@ -5,39 +5,16 @@ use windows::{
         Foundation::*,
         Graphics::Gdi::*,
         System::{LibraryLoader::*, WindowsProgramming::*},
-        UI::{Controls::RichEdit::*, WindowsAndMessaging::*},
+        UI::{Controls::RichEdit::*, WindowsAndMessaging::*,Input::KeyboardAndMouse::*,Shell::*},
     },
 };
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
 //use serde::{Deserialize, Serialize};
 mod savewindow;
-
-fn save_window_placement(hwnd: HWND, file_name: &str) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let mut wndpl = WINDOWPLACEMENT {
-        length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
-        flags: WINDOWPLACEMENT_FLAGS(0),
-        showCmd: SHOW_WINDOW_CMD(0),
-        ptMinPosition: POINT { x: 0, y: 0 },
-        ptMaxPosition: POINT { x: 0, y: 0 },
-        rcNormalPosition: RECT {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        },
-    };
-
-    unsafe {
-        if GetWindowPlacement(hwnd, &mut wndpl).0 == 0 {
-            return Err(Box::new(std::io::Error::last_os_error()));
-        }
-    }
-
-    let serializable_wndpl = savewindow::window_placement_to_serializable(wndpl);
-    let serialized_wndpl = serde_json::to_string(&serializable_wndpl)?;
-    std::fs::write(file_name, serialized_wndpl)?;
-
-    Ok(())
-}
+use std::collections::HashMap;
+static RESULTS: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+static WINDOWHANDLES: Lazy<Mutex<HashMap<String,HWND>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub fn LOWORD(l: usize) -> usize {
     l & 0xffff
@@ -46,6 +23,54 @@ pub fn LOWORD(l: usize) -> usize {
 pub fn HIWORD(l: usize) -> usize {
     (l >> 16) & 0xffff
 }
+fn get_text_from_textbox(hwnd: HWND)->(){
+	// Get the length of the text
+                let text_length = unsafe{GetWindowTextLengthW(hwnd) };
+
+                // Allocate a buffer to store the text
+                let mut text_buffer: Vec<u16> = vec![0; (text_length + 1) as usize];
+
+                // Retrieve the text
+                unsafe{GetWindowTextW(hwnd, &mut text_buffer);}
+
+                // Convert the text to a Rust String
+                let text = String::from_utf16_lossy(&text_buffer);
+				let text = text.trim_matches(char::from(0)).to_string();
+
+                // Use the text as needed
+				let mut te=RESULTS.lock().unwrap();
+                *te=Some(text);
+}
+unsafe extern "system" fn text_box_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _id_subclass: usize,
+    _ref_data: usize,
+) -> LRESULT {
+    match msg {
+        WM_KEYDOWN => {
+            if wparam.0 == VK_RETURN.0 as usize{
+                // Enter key has been pressed, handle the event here
+                // ...
+				get_text_from_textbox(hwnd);
+				
+				
+				PostQuitMessage(0);
+
+                // You can return 0 to prevent the Enter key from being processed further
+                return LRESULT(0);
+				
+            }
+        }
+        _ => {}
+    }
+
+    // Call the original window procedure (DefSubclassProc)
+    DefSubclassProc(hwnd, msg, wparam, lparam)
+}
+
 unsafe extern "system" fn window_proc(
     hwnd: HWND,
     msg: u32,
@@ -110,7 +135,14 @@ unsafe extern "system" fn window_proc(
                 h_instance,
                 None,
             );
-
+			let mut winhand=WINDOWHANDLES.lock().unwrap();
+			winhand.insert("Ok".to_string(), hwnd_ok);//["Ok"]=hwnd_ok;
+			winhand.insert("Cancel".to_string(), hwnd_cancel);
+			winhand.insert("Edit".to_string(), hwnd_text);
+			//winhand["Cancel"]=hwnd_cancel;
+			//winhand["Edit"]=hwnd_text;
+			
+			// Setting fonts.
             // Retrieve a handle to the system color brush for the window background
             let hbr = unsafe { GetSysColorBrush(COLOR_WINDOW) };
             let mut non_client_metrics = NONCLIENTMETRICSW::default();
@@ -174,6 +206,13 @@ unsafe extern "system" fn window_proc(
                     LPARAM(hbr.0),
                 );
             }
+			savewindow::load_window_placement(hwnd,"window.txt");
+			SetWindowSubclass(
+                hwnd_text,
+                Some(text_box_proc),
+                0, // id_subclass, can be any value
+                0, // ref_data, not used in this example
+            );
         }
         WM_COMMAND => {
             let control_id = LOWORD(wparam.0);
@@ -185,12 +224,15 @@ unsafe extern "system" fn window_proc(
                 && control_handle.0 == GetDlgItem(hwnd, IDOK.0).0
             {
                 println!("OK button clicked!");
+				let mut winhand=WINDOWHANDLES.lock().unwrap();
+				get_text_from_textbox(winhand["Edit"]);
+				PostQuitMessage(0);
             } else if control_id == IDCANCEL.0 as usize
                 && notification_code == 0
                 && control_handle.0 == GetDlgItem(hwnd, IDCANCEL.0).0
             {
                 println!("Cancel button clicked!");
-				save_window_placement(hwnd,"window.txt");
+				savewindow::save_window_placement(hwnd,"window.txt");
 				PostQuitMessage(0);
             }
         }
@@ -205,7 +247,7 @@ unsafe extern "system" fn window_proc(
     return LRESULT(0);
 }
 
-pub fn create_window() {
+pub fn create_window()->Option<String> {
     // Get the HINSTANCE for the current process
     let h_instance = unsafe { GetModuleHandleW(None).unwrap() };
 
@@ -232,12 +274,12 @@ pub fn create_window() {
     };
     unsafe {
         RegisterClassW(&wnd_class);
-
+		
         // Create the main window
         let hwnd_main = CreateWindowExW(
             WINDOW_EX_STYLE(0),
             class_name,
-            w!("Only 1 letter in title"),
+            w!("There should not be a visible title :p"),
             WS_OVERLAPPEDWINDOW | WS_SYSMENU,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
@@ -265,8 +307,15 @@ pub fn create_window() {
                 DispatchMessageW(&msg);
             }
         }
-
+		
         // Clean up
+		let mut winhand=WINDOWHANDLES.lock().unwrap();
+		*winhand=HashMap::new();
         PostQuitMessage(0);
+		
+		let texxtg=RESULTS.lock().unwrap();
+		let text=texxtg.as_ref();
+		//let text=*texxtg;
+		text.cloned()
     }
 }
