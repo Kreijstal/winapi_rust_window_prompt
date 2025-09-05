@@ -18,7 +18,7 @@ serde_json = "1.0"
 #winapi = {version="0.3.9", features = ["winuser", "libloaderapi","windef"] }
 
 [dependencies.windows]
-version = "0.48"
+version = "0.62"
 features = [
     "Data_Xml_Dom",
     "Win32_Foundation",
